@@ -333,37 +333,39 @@ The production API is available at:
 https://intego-api.onrender.com
 ```
 
-### Frontend on Cloudflare Pages
+### Frontend on Cloudflare Workers
 
-Connect this GitHub repository to Cloudflare Pages and use these build settings:
+Connect this GitHub repository to Cloudflare Workers Builds and use these settings:
 
 ```text
 Production branch: main
 Root directory: frontend
 Build command: npm run build
-Build output directory: dist
+Deploy command: npx wrangler deploy
 ```
 
-The committed `frontend/.env.production` points production builds to the Render
-API. Alternatively, configure this Cloudflare Pages environment variable:
+The committed `frontend/wrangler.jsonc` publishes the `dist` directory and
+provides the SPA navigation fallback. The committed `frontend/.env.production`
+points production builds to the Render API. Alternatively, configure this
+Cloudflare build variable:
 
 ```dotenv
 VITE_API_URL=https://intego-api.onrender.com
 ```
 
 After Cloudflare creates the site, copy its production URL (for example,
-`https://intego.pages.dev`) and set the following variable on the Render web
-service, using the real URL without a trailing slash:
+`https://intego.example.workers.dev`) and set the following variable on the
+Render web service, using the real URL without a trailing slash:
 
 ```dotenv
-CORS_ALLOWED_ORIGINS=https://intego.pages.dev
+CORS_ALLOWED_ORIGINS=https://intego.example.workers.dev
 ```
 
 Redeploy the Render service after changing the variable. This allows the browser
 frontend to call the API while keeping cross-origin access restricted to the
 deployed site.
 
-Live frontend: _Add the Cloudflare Pages URL here after the first deployment._
+Live frontend: _Add the Cloudflare Workers URL here after the first deployment._
 
 
 
