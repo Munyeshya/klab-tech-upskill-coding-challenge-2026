@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+const emptyTask = { title: '', description: '', priority: 'medium' }
 
 function messageFrom(data) {
   if (data?.detail) return data.detail
@@ -16,7 +17,10 @@ async function api(path, options = {}, retry = true) {
     headers: { 'Content-Type': 'application/json', ...(access ? { Authorization: `Bearer ${access}` } : {}), ...options.headers },
   })
   if (response.status === 401 && retry && localStorage.getItem('refreshToken')) {
-    const refreshed = await fetch(`${API_URL}/auth/token/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh: localStorage.getItem('refreshToken') }) })
+    const refreshed = await fetch(`${API_URL}/auth/token/refresh`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: localStorage.getItem('refreshToken') }),
+    })
     if (refreshed.ok) {
       localStorage.setItem('accessToken', (await refreshed.json()).access)
       return api(path, options, false)
@@ -28,60 +32,110 @@ async function api(path, options = {}, retry = true) {
   return data
 }
 
-function AuthScreen({ onAuthenticated }) {
+function validateAuth(form, mode) {
+  if (!form.username.trim()) return 'Username is required.'
+  if (form.username.trim().length < 3) return 'Username must contain at least 3 characters.'
+  if (!/^[\w.@+-]+$/.test(form.username)) return 'Username contains unsupported characters.'
+  if (mode === 'register' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Enter a valid email address.'
+  if (!form.password) return 'Password is required.'
+  if (mode === 'register' && form.password.length < 8) return 'Password must contain at least 8 characters.'
+  return ''
+}
+
+function Toast({ toast, close }) {
+  if (!toast) return null
+  return <div className={`toast ${toast.type}`} role="status" aria-live="polite"><span>{toast.type === 'success' ? '✓' : '!'}</span><p>{toast.message}</p><button aria-label="Dismiss message" onClick={close}>×</button></div>
+}
+
+function AuthScreen({ onAuthenticated, notify, toast, closeToast }) {
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({ username: '', email: '', password: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  function changeMode(next) { setMode(next); setError(''); setForm({ username: '', email: '', password: '' }) }
+  function change(field, value) { setForm((current) => ({ ...current, [field]: value })); setError('') }
   async function submit(event) {
-    event.preventDefault(); setError(''); setBusy(true)
+    event.preventDefault()
+    const validationError = validateAuth(form, mode)
+    if (validationError) { setError(validationError); notify(validationError, 'error'); return }
+    setBusy(true); setError('')
     try {
-      if (mode === 'register') await api('/auth/register', { method: 'POST', body: JSON.stringify(form) })
-      const tokens = await api('/auth/token', { method: 'POST', body: JSON.stringify({ username: form.username, password: form.password }) })
+      if (mode === 'register') await api('/auth/register', { method: 'POST', body: JSON.stringify({ ...form, username: form.username.trim(), email: form.email.trim() }) })
+      const tokens = await api('/auth/token', { method: 'POST', body: JSON.stringify({ username: form.username.trim(), password: form.password }) })
       localStorage.setItem('accessToken', tokens.access); localStorage.setItem('refreshToken', tokens.refresh)
-      onAuthenticated()
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
+      notify(mode === 'register' ? 'Account created. Welcome to TaskFlow!' : 'Welcome back!', 'success')
+      await onAuthenticated()
+    } catch (err) { setError(err.message); notify(err.message, 'error') }
+    finally { setBusy(false) }
   }
+
   return <main className="auth-shell">
+    <Toast toast={toast} close={closeToast} />
     <section className="auth-copy"><span className="eyebrow">TASKFLOW</span><h1>Make space for what matters.</h1><p>A focused task manager for planning clearly and finishing confidently.</p><div className="feature-list"><span>✓ Private workspace</span><span>✓ Priority tracking</span><span>✓ Simple filters</span></div></section>
-    <section className="auth-card"><div className="auth-tabs"><button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Sign in</button><button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Create account</button></div><h2>{mode === 'login' ? 'Welcome back' : 'Start organizing'}</h2><p className="muted">{mode === 'login' ? 'Enter your details to continue.' : 'Create your secure workspace.'}</p>
-      <form onSubmit={submit}><label>Username<input required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></label>{mode === 'register' && <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>}<label>Password<input required type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <p className="error">{error}</p>}<button className="primary wide" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button></form>
+    <section className="auth-card">
+      <div className="auth-tabs"><button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => changeMode('login')}>Sign in</button><button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => changeMode('register')}>Create account</button></div>
+      <h2>{mode === 'login' ? 'Welcome back' : 'Start organizing'}</h2><p className="muted">{mode === 'login' ? 'Enter your details to continue.' : 'Create your secure workspace.'}</p>
+      <form onSubmit={submit} noValidate>
+        <label>Username<input required minLength="3" maxLength="150" value={form.username} onChange={(e) => change('username', e.target.value)} /></label>
+        {mode === 'register' && <label>Email<input required type="email" value={form.email} onChange={(e) => change('email', e.target.value)} /></label>}
+        <label>Password<input required minLength={mode === 'register' ? 8 : 1} type="password" value={form.password} onChange={(e) => change('password', e.target.value)} /></label>
+        {error && <p className="error">{error}</p>}<button className="primary wide" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+      </form>
     </section>
   </main>
 }
 
-const emptyTask = { title: '', description: '', priority: 'medium' }
-
 function App() {
   const [user, setUser] = useState(null), [tasks, setTasks] = useState([]), [filter, setFilter] = useState('all')
   const [form, setForm] = useState(emptyTask), [editingId, setEditingId] = useState(null), [error, setError] = useState('')
-  const [loading, setLoading] = useState(Boolean(localStorage.getItem('accessToken')))
+  const [loading, setLoading] = useState(Boolean(localStorage.getItem('accessToken'))), [toast, setToast] = useState(null)
+  const notify = useCallback((message, type = 'success') => {
+    const id = Date.now(); setToast({ id, message, type })
+    window.setTimeout(() => setToast((current) => current?.id === id ? null : current), 4000)
+  }, [])
   const loadSession = useCallback(async () => {
     try { const [profile, list] = await Promise.all([api('/auth/me'), api('/tasks')]); setUser(profile); setTasks(list) }
-    catch { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); setUser(null) }
+    catch { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); setUser(null); notify('Your session expired. Please sign in again.', 'error') }
     finally { setLoading(false) }
-  }, [])
-  // Session restoration intentionally updates authentication state after mount.
+  }, [notify])
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => { if (localStorage.getItem('accessToken')) loadSession() }, [loadSession])
-  async function loadTasks(next = filter) { setTasks(await api(`/tasks${next === 'all' ? '' : `?status=${next}`}`)) }
+
+  async function loadTasks(next = filter) { try { setTasks(await api(`/tasks${next === 'all' ? '' : `?status=${next}`}`)) } catch (err) { notify(err.message, 'error') } }
   async function saveTask(event) {
-    event.preventDefault(); setError('')
-    try { await api(editingId ? `/tasks/${editingId}` : '/tasks', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); setForm(emptyTask); setEditingId(null); await loadTasks() }
-    catch (err) { setError(err.message) }
+    event.preventDefault(); const title = form.title.trim()
+    const validationError = !title ? 'Task title is required.' : title.length < 3 ? 'Task title must contain at least 3 characters.' : title.length > 255 ? 'Task title cannot exceed 255 characters.' : ''
+    if (validationError) { setError(validationError); notify(validationError, 'error'); return }
+    setError('')
+    try {
+      const wasEditing = Boolean(editingId)
+      await api(editingId ? `/tasks/${editingId}` : '/tasks', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify({ ...form, title }) })
+      setForm(emptyTask); setEditingId(null); await loadTasks(); notify(wasEditing ? 'Task updated successfully.' : 'Task created successfully.')
+    } catch (err) { setError(err.message); notify(err.message, 'error') }
   }
-  async function toggleTask(task) { await api(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ status: task.status === 'completed' ? 'pending' : 'completed' }) }); await loadTasks() }
-  async function removeTask(id) { await api(`/tasks/${id}`, { method: 'DELETE' }); await loadTasks() }
-  function editTask(task) { setEditingId(task.id); setForm({ title: task.title, description: task.description, priority: task.priority }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  function logout() { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); setUser(null); setTasks([]) }
-  if (loading) return <div className="loading">Loading your workspace…</div>
-  if (!user) return <AuthScreen onAuthenticated={loadSession} />
+  async function toggleTask(task) { try { const done = task.status !== 'completed'; await api(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ status: done ? 'completed' : 'pending' }) }); await loadTasks(); notify(done ? 'Task marked as completed.' : 'Task moved back to pending.') } catch (err) { notify(err.message, 'error') } }
+  async function removeTask(id) { if (!window.confirm('Delete this task permanently?')) return; try { await api(`/tasks/${id}`, { method: 'DELETE' }); await loadTasks(); notify('Task deleted.') } catch (err) { notify(err.message, 'error') } }
+  function editTask(task) { setEditingId(task.id); setError(''); setForm({ title: task.title, description: task.description, priority: task.priority }); notify('Task loaded for editing.'); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  function cancelEdit() { setEditingId(null); setForm(emptyTask); setError(''); notify('Editing cancelled.') }
+  function logout() { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); setUser(null); setTasks([]); notify('You have signed out.') }
+
+  if (loading) return <><Toast toast={toast} close={() => setToast(null)} /><div className="loading">Loading your workspace…</div></>
+  if (!user) return <AuthScreen onAuthenticated={loadSession} notify={notify} toast={toast} closeToast={() => setToast(null)} />
   const completed = tasks.filter((task) => task.status === 'completed').length
   return <div className="app-shell">
+    <Toast toast={toast} close={() => setToast(null)} />
     <header><div className="brand"><span className="brand-mark">✓</span> TaskFlow</div><div className="profile"><span>{user.username}</span><button className="ghost" onClick={logout}>Sign out</button></div></header>
-    <main className="workspace"><section className="intro"><div><span className="eyebrow">MY WORKSPACE</span><h1>Good day, {user.username}.</h1><p>Capture the work, choose what matters, and make progress.</p></div><div className="stat"><strong>{tasks.length}</strong><span>tasks shown</span><small>{completed} completed</small></div></section>
-      <section className="composer card"><div><h2>{editingId ? 'Edit task' : 'Add a new task'}</h2><p className="muted">Keep it clear and actionable.</p></div><form onSubmit={saveTask}><label>Task title<input required placeholder="What needs to be done?" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><label>Description<textarea placeholder="Add helpful details…" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><div className="form-row"><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><div className="form-actions">{editingId && <button type="button" className="ghost" onClick={() => { setEditingId(null); setForm(emptyTask) }}>Cancel</button>}<button className="primary">{editingId ? 'Save changes' : 'Add task'}</button></div></div>{error && <p className="error">{error}</p>}</form></section>
-      <section className="task-section"><div className="task-heading"><div><h2>Your tasks</h2><p className="muted">One step at a time.</p></div><div className="filters">{['all', 'pending', 'completed'].map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={async () => { setFilter(item); await loadTasks(item) }}>{item}</button>)}</div></div><div className="task-list">{tasks.length === 0 && <div className="empty card"><span>✓</span><h3>No tasks here</h3><p>Create a task or choose another filter.</p></div>}{tasks.map((task) => <article className={`task card ${task.status}`} key={task.id}><button className="check" aria-label="Toggle completion" onClick={() => toggleTask(task)}>{task.status === 'completed' ? '✓' : ''}</button><div className="task-content"><div className="task-meta"><span className={`priority ${task.priority}`}>{task.priority}</span><time>{new Date(task.createdAt).toLocaleDateString()}</time></div><h3>{task.title}</h3>{task.description && <p>{task.description}</p>}</div><div className="task-actions"><button onClick={() => editTask(task)}>Edit</button><button className="danger" onClick={() => removeTask(task.id)}>Delete</button></div></article>)}</div></section>
+    <main className="workspace">
+      <section className="intro"><div><span className="eyebrow">MY WORKSPACE</span><h1>Good day, {user.username}.</h1><p>Capture the work, choose what matters, and make progress.</p></div><div className="stat"><strong>{tasks.length}</strong><span>tasks shown</span><small>{completed} completed</small></div></section>
+      <section className="composer card"><div><h2>{editingId ? 'Edit task' : 'Add a new task'}</h2><p className="muted">Keep it clear and actionable.</p></div><form onSubmit={saveTask} noValidate>
+        <label>Task title<input required minLength="3" maxLength="255" placeholder="What needs to be done?" value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); setError('') }} /></label>
+        <label>Description<textarea maxLength="2000" placeholder="Add helpful details…" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+        <div className="form-row"><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><div className="form-actions">{editingId && <button type="button" className="ghost" onClick={cancelEdit}>Cancel</button>}<button className="primary">{editingId ? 'Save changes' : 'Add task'}</button></div></div>{error && <p className="error">{error}</p>}
+      </form></section>
+      <section className="task-section"><div className="task-heading"><div><h2>Your tasks</h2><p className="muted">One step at a time.</p></div><div className="filters">{['all', 'pending', 'completed'].map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={async () => { setFilter(item); await loadTasks(item) }}>{item}</button>)}</div></div>
+        <div className="task-list">{tasks.length === 0 && <div className="empty card"><span>✓</span><h3>No tasks here</h3><p>Create a task or choose another filter.</p></div>}{tasks.map((task) => <article className={`task card ${task.status}`} key={task.id}><button className="check" aria-label="Toggle completion" onClick={() => toggleTask(task)}>{task.status === 'completed' ? '✓' : ''}</button><div className="task-content"><div className="task-meta"><span className={`priority ${task.priority}`}>{task.priority}</span><time>{new Date(task.createdAt).toLocaleDateString()}</time></div><h3>{task.title}</h3>{task.description && <p>{task.description}</p>}</div><div className="task-actions"><button onClick={() => editTask(task)}>Edit</button><button className="danger" onClick={() => removeTask(task.id)}>Delete</button></div></article>)}</div>
+      </section>
     </main>
   </div>
 }
