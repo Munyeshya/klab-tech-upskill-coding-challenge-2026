@@ -327,16 +327,7 @@ Before production deployment:
 
 Live demo: _Add the deployed application URL here._
 
-## Submission
 
-The original challenge requests:
 
-- Full name and email address
-- GitHub repository link
-- Live demo link, if available
-- Technologies used
-- This README with installation, database, execution, and technical details
 
-Submission form: <https://forms.gle/BtwBgyGT1hXVdb1TA>
 
-Challenge deadline: **Friday, 18 September 2026 at 8:30 AM Rwanda time**.
