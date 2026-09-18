@@ -365,7 +365,7 @@ Redeploy the Render service after changing the variable. This allows the browser
 frontend to call the API while keeping cross-origin access restricted to the
 deployed site.
 
-Live frontend: _Add the Cloudflare Workers URL here after the first deployment._
+Live frontend: [https://intego.obedbenny54.workers.dev](https://intego.obedbenny54.workers.dev)
 
 
 
