@@ -1,0 +1,87 @@
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from .models import Task
+
+
+class TaskApiTests(APITestCase):
+    def setUp(self):
+        self.task = Task.objects.create(
+            title='Build the API',
+            description='Implement the task endpoints.',
+            priority=Task.Priority.HIGH,
+        )
+
+    def test_list_tasks(self):
+        response = self.client.get('/tasks')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], self.task.title)
+        self.assertIn('createdAt', response.data[0])
+
+    def test_get_one_task(self):
+        response = self.client.get(f'/tasks/{self.task.id}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], self.task.id)
+
+    def test_create_task(self):
+        payload = {
+            'title': 'Build the frontend',
+            'description': 'Create the React application.',
+            'status': 'pending',
+            'priority': 'medium',
+        }
+
+        response = self.client.post('/tasks', payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Task.objects.count(), 2)
+        self.assertEqual(response.data['title'], payload['title'])
+
+    def test_update_task(self):
+        payload = {
+            'title': 'API completed',
+            'description': self.task.description,
+            'status': 'completed',
+            'priority': 'high',
+        }
+
+        response = self.client.put(
+            f'/tasks/{self.task.id}', payload, format='json'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.Status.COMPLETED)
+
+    def test_delete_task(self):
+        response = self.client.delete(f'/tasks/{self.task.id}')
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Task.objects.filter(id=self.task.id).exists())
+
+    def test_filter_tasks_by_status(self):
+        Task.objects.create(title='Finished task', status=Task.Status.COMPLETED)
+
+        response = self.client.get('/tasks?status=completed')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['status'], 'completed')
+
+    def test_reject_invalid_status_filter(self):
+        response = self.client.get('/tasks?status=unknown')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reject_blank_title(self):
+        response = self.client.post(
+            '/tasks',
+            {'title': '   ', 'description': '', 'priority': 'low'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('title', response.data)
