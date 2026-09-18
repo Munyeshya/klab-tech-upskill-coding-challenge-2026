@@ -56,6 +56,18 @@ class TaskApiTests(APITestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.Status.COMPLETED)
 
+    def test_partially_update_task_status(self):
+        response = self.client.patch(
+            f'/tasks/{self.task.id}',
+            {'status': 'completed'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.Status.COMPLETED)
+        self.assertEqual(self.task.title, 'Build the API')
+
     def test_delete_task(self):
         response = self.client.delete(f'/tasks/{self.task.id}')
 
@@ -85,3 +97,18 @@ class TaskApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('title', response.data)
+
+    def test_reject_invalid_priority(self):
+        response = self.client.post(
+            '/tasks',
+            {'title': 'Invalid task', 'priority': 'urgent'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('priority', response.data)
+
+    def test_missing_task_returns_not_found(self):
+        response = self.client.get('/tasks/999999')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
