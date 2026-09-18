@@ -17,6 +17,8 @@ private collection of prioritized tasks.
 - User-isolated task data
 - Create, view, edit, complete, reopen, and delete tasks
 - Filter tasks by pending or completed status
+- Search task titles and descriptions
+- Browse tasks with server-side pagination
 - Responsive interface and server-side validation
 - Automated authentication and API tests
 
