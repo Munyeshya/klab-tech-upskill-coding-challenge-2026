@@ -90,19 +90,27 @@ function App() {
   const [user, setUser] = useState(null), [tasks, setTasks] = useState([]), [filter, setFilter] = useState('all')
   const [form, setForm] = useState(emptyTask), [editingId, setEditingId] = useState(null), [error, setError] = useState('')
   const [loading, setLoading] = useState(Boolean(localStorage.getItem('accessToken'))), [toast, setToast] = useState(null)
+  const [search, setSearch] = useState(''), [page, setPage] = useState(1), [showForm, setShowForm] = useState(false)
+  const [pagination, setPagination] = useState({ count: 0, next: null, previous: null })
   const notify = useCallback((message, type = 'success') => {
     const id = Date.now(); setToast({ id, message, type })
     window.setTimeout(() => setToast((current) => current?.id === id ? null : current), 4000)
   }, [])
   const loadSession = useCallback(async () => {
-    try { const [profile, list] = await Promise.all([api('/auth/me'), api('/tasks')]); setUser(profile); setTasks(list) }
+    try { const [profile, list] = await Promise.all([api('/auth/me'), api('/tasks')]); setUser(profile); setTasks(list.results); setPagination(list) }
     catch { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); setUser(null); notify('Your session expired. Please sign in again.', 'error') }
     finally { setLoading(false) }
   }, [notify])
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => { if (localStorage.getItem('accessToken')) loadSession() }, [loadSession])
 
-  async function loadTasks(next = filter) { try { setTasks(await api(`/tasks${next === 'all' ? '' : `?status=${next}`}`)) } catch (err) { notify(err.message, 'error') } }
+  async function loadTasks(nextFilter = filter, nextPage = page, nextSearch = search) {
+    const params = new URLSearchParams({ page: String(nextPage) })
+    if (nextFilter !== 'all') params.set('status', nextFilter)
+    if (nextSearch.trim()) params.set('search', nextSearch.trim())
+    try { const data = await api(`/tasks?${params}`); setTasks(data.results); setPagination(data); setPage(nextPage) }
+    catch (err) { notify(err.message, 'error') }
+  }
   async function saveTask(event) {
     event.preventDefault(); const title = form.title.trim()
     const validationError = !title ? 'Task title is required.' : title.length < 3 ? 'Task title must contain at least 3 characters.' : title.length > 255 ? 'Task title cannot exceed 255 characters.' : ''
@@ -111,31 +119,32 @@ function App() {
     try {
       const wasEditing = Boolean(editingId)
       await api(editingId ? `/tasks/${editingId}` : '/tasks', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify({ ...form, title }) })
-      setForm(emptyTask); setEditingId(null); await loadTasks(); notify(wasEditing ? 'Task updated successfully.' : 'Task created successfully.')
+      setForm(emptyTask); setEditingId(null); setShowForm(false); await loadTasks(filter, wasEditing ? page : 1, search); notify(wasEditing ? 'Task updated successfully.' : 'Task created successfully.')
     } catch (err) { setError(err.message); notify(err.message, 'error') }
   }
   async function toggleTask(task) { try { const done = task.status !== 'completed'; await api(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ status: done ? 'completed' : 'pending' }) }); await loadTasks(); notify(done ? 'Task marked as completed.' : 'Task moved back to pending.') } catch (err) { notify(err.message, 'error') } }
   async function removeTask(id) { if (!window.confirm('Delete this task permanently?')) return; try { await api(`/tasks/${id}`, { method: 'DELETE' }); await loadTasks(); notify('Task deleted.') } catch (err) { notify(err.message, 'error') } }
-  function editTask(task) { setEditingId(task.id); setError(''); setForm({ title: task.title, description: task.description, priority: task.priority }); notify('Task loaded for editing.'); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  function cancelEdit() { setEditingId(null); setForm(emptyTask); setError(''); notify('Editing cancelled.') }
+  function editTask(task) { setEditingId(task.id); setError(''); setForm({ title: task.title, description: task.description, priority: task.priority }); setShowForm(true); notify('Task loaded for editing.') }
+  function cancelEdit() { setEditingId(null); setForm(emptyTask); setError(''); setShowForm(false); notify('Editing cancelled.') }
+  function addTask() { setEditingId(null); setForm(emptyTask); setError(''); setShowForm(true) }
   function logout() { localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); setUser(null); setTasks([]); notify('You have signed out.') }
 
   if (loading) return <><Toast toast={toast} close={() => setToast(null)} /><div className="loading">Loading your workspace…</div></>
   if (!user) return <AuthScreen onAuthenticated={loadSession} notify={notify} toast={toast} closeToast={() => setToast(null)} />
-  const completed = tasks.filter((task) => task.status === 'completed').length
+  const totalPages = Math.max(1, Math.ceil(pagination.count / 6))
   return <div className="app-shell">
     <Toast toast={toast} close={() => setToast(null)} />
     <header><div className="brand"><span className="brand-mark">✓</span> TaskFlow</div><div className="profile"><span>{user.username}</span><button className="ghost" onClick={logout}>Sign out</button></div></header>
     <main className="workspace">
-      <section className="intro"><div><span className="eyebrow">MY WORKSPACE</span><h1>Good day, {user.username}.</h1><p>Capture the work, choose what matters, and make progress.</p></div><div className="stat"><strong>{tasks.length}</strong><span>tasks shown</span><small>{completed} completed</small></div></section>
-      <section className="composer card"><div><h2>{editingId ? 'Edit task' : 'Add a new task'}</h2><p className="muted">Keep it clear and actionable.</p></div><form onSubmit={saveTask} noValidate>
-        <label>Task title<input required minLength="3" maxLength="255" placeholder="What needs to be done?" value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); setError('') }} /></label>
-        <label>Description<textarea maxLength="2000" placeholder="Add helpful details…" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-        <div className="form-row"><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><div className="form-actions">{editingId && <button type="button" className="ghost" onClick={cancelEdit}>Cancel</button>}<button className="primary">{editingId ? 'Save changes' : 'Add task'}</button></div></div>{error && <p className="error">{error}</p>}
-      </form></section>
-      <section className="task-section"><div className="task-heading"><div><h2>Your tasks</h2><p className="muted">One step at a time.</p></div><div className="filters">{['all', 'pending', 'completed'].map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={async () => { setFilter(item); await loadTasks(item) }}>{item}</button>)}</div></div>
+      <section className="intro"><div><span className="eyebrow">MY WORKSPACE</span><h1>Good day, {user.username}.</h1><p>Capture the work, choose what matters, and make progress.</p></div><div className="stat"><strong>{pagination.count}</strong><span>matching tasks</span><small>Page {page} of {totalPages}</small></div></section>
+      <section className="task-section first"><div className="task-heading"><div><h2>Your tasks</h2><p className="muted">One step at a time.</p></div><button className="primary add-task" onClick={addTask}>+ Add task</button></div>
+        <div className="task-tools"><form className="search" onSubmit={(event) => { event.preventDefault(); loadTasks(filter, 1, search) }}><input aria-label="Search tasks" placeholder="Search tasks…" value={search} onChange={(e) => setSearch(e.target.value)} /><button type="submit">Search</button>{search && <button type="button" className="clear" onClick={() => { setSearch(''); loadTasks(filter, 1, '') }}>Clear</button>}</form><div className="filters">{['all', 'pending', 'completed'].map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={() => { setFilter(item); loadTasks(item, 1, search) }}>{item}</button>)}</div></div>
         <div className="task-list">{tasks.length === 0 && <div className="empty card"><span>✓</span><h3>No tasks here</h3><p>Create a task or choose another filter.</p></div>}{tasks.map((task) => <article className={`task card ${task.status}`} key={task.id}><button className="check" aria-label="Toggle completion" onClick={() => toggleTask(task)}>{task.status === 'completed' ? '✓' : ''}</button><div className="task-content"><div className="task-meta"><span className={`priority ${task.priority}`}>{task.priority}</span><time>{new Date(task.createdAt).toLocaleDateString()}</time></div><h3>{task.title}</h3>{task.description && <p>{task.description}</p>}</div><div className="task-actions"><button onClick={() => editTask(task)}>Edit</button><button className="danger" onClick={() => removeTask(task.id)}>Delete</button></div></article>)}</div>
+        {totalPages > 1 && <nav className="pagination" aria-label="Task pages"><button disabled={!pagination.previous} onClick={() => loadTasks(filter, page - 1, search)}>← Previous</button><span>Page {page} of {totalPages}</span><button disabled={!pagination.next} onClick={() => loadTasks(filter, page + 1, search)}>Next →</button></nav>}
       </section>
+      {showForm && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) cancelEdit() }}><section className="composer card modal"><button className="modal-close" aria-label="Close task form" onClick={cancelEdit}>×</button><div><h2>{editingId ? 'Edit task' : 'Add a new task'}</h2><p className="muted">Keep it clear and actionable.</p></div><form onSubmit={saveTask} noValidate>
+        <label>Task title<input autoFocus required minLength="3" maxLength="255" placeholder="What needs to be done?" value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); setError('') }} /></label><label>Description<textarea maxLength="2000" placeholder="Add helpful details…" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><div className="form-row"><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><div className="form-actions"><button type="button" className="ghost" onClick={cancelEdit}>Cancel</button><button className="primary">{editingId ? 'Save changes' : 'Add task'}</button></div></div>{error && <p className="error">{error}</p>}
+      </form></section></div>}
     </main>
   </div>
 }
