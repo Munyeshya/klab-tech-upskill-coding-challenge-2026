@@ -1,6 +1,7 @@
-# TaskFlow
+# Intego
 
-A full-stack task management application built for the kLab Tech Upskill
+A full-stack task management application named **Intego**—Kinyarwanda for
+“goal” or “objective”—built for the kLab Tech Upskill
 Program challenge. Users can create an account, sign in securely, and manage a
 private collection of prioritized tasks.
 

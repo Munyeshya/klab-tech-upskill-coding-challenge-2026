@@ -1,4 +1,4 @@
-# TaskFlow React Client
+# Intego React Client
 
 ## Setup
 
