@@ -103,10 +103,8 @@ DATABASES = {
     }
 }
 
-if os.getenv('MYSQL_SSL_CA'):
-    DATABASES['default']['OPTIONS']['ssl'] = {
-        'ca': os.getenv('MYSQL_SSL_CA'),
-    }
+if os.getenv('MYSQL_SSL_MODE'):
+    DATABASES['default']['OPTIONS']['ssl_mode'] = os.getenv('MYSQL_SSL_MODE')
 
 
 # Password validation
