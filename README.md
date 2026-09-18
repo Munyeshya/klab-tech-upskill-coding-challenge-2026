@@ -325,7 +325,45 @@ Before production deployment:
 6. Serve Django with a production application server and serve the generated
    `frontend/dist` files through a static host.
 
-Live demo: _Add the deployed application URL here._
+### Backend on Render
+
+The production API is available at:
+
+```text
+https://intego-api.onrender.com
+```
+
+### Frontend on Cloudflare Pages
+
+Connect this GitHub repository to Cloudflare Pages and use these build settings:
+
+```text
+Production branch: main
+Root directory: frontend
+Build command: npm run build
+Build output directory: dist
+```
+
+The committed `frontend/.env.production` points production builds to the Render
+API. Alternatively, configure this Cloudflare Pages environment variable:
+
+```dotenv
+VITE_API_URL=https://intego-api.onrender.com
+```
+
+After Cloudflare creates the site, copy its production URL (for example,
+`https://intego.pages.dev`) and set the following variable on the Render web
+service, using the real URL without a trailing slash:
+
+```dotenv
+CORS_ALLOWED_ORIGINS=https://intego.pages.dev
+```
+
+Redeploy the Render service after changing the variable. This allows the browser
+frontend to call the API while keeping cross-origin access restricted to the
+deployed site.
+
+Live frontend: _Add the Cloudflare Pages URL here after the first deployment._
 
 
 
