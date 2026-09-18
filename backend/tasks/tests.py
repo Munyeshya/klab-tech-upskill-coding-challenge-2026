@@ -22,9 +22,10 @@ class TaskApiTests(APITestCase):
         response = self.client.get('/tasks')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], self.task.title)
-        self.assertIn('createdAt', response.data[0])
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['title'], self.task.title)
+        self.assertIn('createdAt', response.data['results'][0])
 
     def test_get_one_task(self):
         response = self.client.get(f'/tasks/{self.task.id}')
@@ -91,8 +92,8 @@ class TaskApiTests(APITestCase):
         response = self.client.get('/tasks?status=completed')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['status'], 'completed')
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['status'], 'completed')
 
     def test_reject_invalid_status_filter(self):
         response = self.client.get('/tasks?status=unknown')
@@ -141,5 +142,35 @@ class TaskApiTests(APITestCase):
         detail_response = self.client.get(f'/tasks/{other_task.id}')
 
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(list_response.data), 1)
+        self.assertEqual(len(list_response.data['results']), 1)
         self.assertEqual(detail_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_search_tasks_by_title_and_description(self):
+        Task.objects.create(
+            owner=self.user,
+            title='Buy groceries',
+            description='Milk and bread',
+        )
+
+        title_response = self.client.get('/tasks?search=groceries')
+        description_response = self.client.get('/tasks?search=milk')
+
+        self.assertEqual(title_response.data['count'], 1)
+        self.assertEqual(description_response.data['count'], 1)
+        self.assertEqual(
+            title_response.data['results'][0]['title'], 'Buy groceries'
+        )
+
+    def test_paginate_tasks(self):
+        Task.objects.bulk_create(
+            [Task(owner=self.user, title=f'Task {number}') for number in range(7)]
+        )
+
+        first_page = self.client.get('/tasks?page=1')
+        second_page = self.client.get('/tasks?page=2')
+
+        self.assertEqual(first_page.data['count'], 8)
+        self.assertEqual(len(first_page.data['results']), 6)
+        self.assertIsNotNone(first_page.data['next'])
+        self.assertEqual(len(second_page.data['results']), 2)
+        self.assertIsNotNone(second_page.data['previous'])
