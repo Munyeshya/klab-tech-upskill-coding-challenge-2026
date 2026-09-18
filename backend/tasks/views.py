@@ -9,7 +9,7 @@ class TaskListCreateView(generics.ListCreateAPIView):
     serializer_class = TaskSerializer
 
     def get_queryset(self):
-        queryset = Task.objects.all()
+        queryset = Task.objects.filter(owner=self.request.user)
         status = self.request.query_params.get('status')
 
         if status is not None:
@@ -22,7 +22,12 @@ class TaskListCreateView(generics.ListCreateAPIView):
 
         return queryset
 
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
 
 class TaskDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Task.objects.all()
     serializer_class = TaskSerializer
+
+    def get_queryset(self):
+        return Task.objects.filter(owner=self.request.user)

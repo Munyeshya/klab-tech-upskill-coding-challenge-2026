@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -6,7 +7,12 @@ from .models import Task
 
 class TaskApiTests(APITestCase):
     def setUp(self):
+        self.user = User.objects.create_user(
+            username='alice', password='StrongPass123!'
+        )
+        self.client.force_authenticate(user=self.user)
         self.task = Task.objects.create(
+            owner=self.user,
             title='Build the API',
             description='Implement the task endpoints.',
             priority=Task.Priority.HIGH,
@@ -39,6 +45,7 @@ class TaskApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Task.objects.count(), 2)
         self.assertEqual(response.data['title'], payload['title'])
+        self.assertEqual(Task.objects.get(id=response.data['id']).owner, self.user)
 
     def test_update_task(self):
         payload = {
@@ -75,7 +82,11 @@ class TaskApiTests(APITestCase):
         self.assertFalse(Task.objects.filter(id=self.task.id).exists())
 
     def test_filter_tasks_by_status(self):
-        Task.objects.create(title='Finished task', status=Task.Status.COMPLETED)
+        Task.objects.create(
+            owner=self.user,
+            title='Finished task',
+            status=Task.Status.COMPLETED,
+        )
 
         response = self.client.get('/tasks?status=completed')
 
@@ -112,3 +123,23 @@ class TaskApiTests(APITestCase):
         response = self.client.get('/tasks/999999')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_tasks_require_authentication(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get('/tasks')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_user_cannot_access_another_users_task(self):
+        other_user = User.objects.create_user(
+            username='bob', password='StrongPass123!'
+        )
+        other_task = Task.objects.create(owner=other_user, title='Private task')
+
+        list_response = self.client.get('/tasks')
+        detail_response = self.client.get(f'/tasks/{other_task.id}')
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(list_response.data), 1)
+        self.assertEqual(detail_response.status_code, status.HTTP_404_NOT_FOUND)
